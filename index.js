@@ -44,6 +44,8 @@ app.get('/', (req, res) => {
   res.send('Bot Vallox MetaApi funcionando');
 });
 
-app.listen(port, () => {
-  console.log(`Servidor escuchando en el puerto ${port}`);
+const PORT = process.env.PORT || 8080;
+
+app.listen(PORT, () => {
+  console.log(`Express server is running on port ${PORT}`);
 });
