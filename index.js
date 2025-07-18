@@ -15,16 +15,18 @@ app.use(bodyParser.json());
 
 app.post('/webhook', async (req, res) => {
   const signal = req.body;
-  console.log('📩 Señal recibida:', signal); // Confirmación por consola
+  console.log('📩 Señal recibida:', signal); // Confirmación visual
 
   try {
     const account = await api.metatraderAccountApi.getAccount(accountId);
-    const connection = await account.getAccountConnection(); // ✅ CORRECTO
+    const connection = await account.getStreamingConnection();
     await connection.connect();
 
     if (!connection.connected) {
       throw new Error('❌ Conexión no disponible');
     }
+
+    console.log('✅ Conectado, enviando orden...');
 
     const { symbol, action, lot, sl, tp } = signal;
 
@@ -36,16 +38,15 @@ app.post('/webhook', async (req, res) => {
     console.log('✅ Orden ejecutada:', result);
     res.status(200).send({ status: 'Orden ejecutada', result });
   } catch (err) {
-    console.error('🛑 Error al ejecutar la orden:', err);
+    console.error('❌ Error al ejecutar la orden:', err);
     res.status(500).send({ error: err.toString() });
   }
 });
 
 app.get('/', (req, res) => {
-  res.send('🤖 Bot Vallox MetaApi funcionando correctamente.');
+  res.send('Bot Vallox MetaApi funcionando 🦁🔥');
 });
 
 app.listen(port, () => {
   console.log(`🚀 Express server is running on port ${port}`);
 });
-
