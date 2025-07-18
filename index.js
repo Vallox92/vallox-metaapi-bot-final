@@ -25,7 +25,7 @@ app.post('/', async (req, res) => {
     if (!connection.connected) {
       throw new Error('Conexión no disponible');
     }
-
+    console.log('Señal recibida:', signal);
     const { symbol, action, lot, sl, tp } = signal;
     const result = await connection.createMarketOrder(symbol, action, lot, 0.01, {
       stopLoss: sl,
