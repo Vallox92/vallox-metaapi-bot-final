@@ -1,4 +1,3 @@
-
 require('dotenv').config();
 const express = require('express');
 const bodyParser = require('body-parser');
@@ -16,37 +15,37 @@ app.use(bodyParser.json());
 
 app.post('/webhook', async (req, res) => {
   const signal = req.body;
-  console.log('Señal recibida:', signal);  // Esta línea es clave
-});
+  console.log('📩 Señal recibida:', signal); // Confirmación por consola
 
   try {
     const account = await api.metatraderAccountApi.getAccount(accountId);
-    const connection = await account.getRPCConnection();
+    const connection = await account.getAccountConnection(); // ✅ CORRECTO
     await connection.connect();
+
     if (!connection.connected) {
-      throw new Error('Conexión no disponible');
+      throw new Error('❌ Conexión no disponible');
     }
-    console.log('Señal recibida:', signal);
+
     const { symbol, action, lot, sl, tp } = signal;
-    const result = await connection.createMarketOrder(symbol, action, lot, 0.01, {
+
+    const result = await connection.createMarketOrder(symbol, action, lot, {
       stopLoss: sl,
       takeProfit: tp
     });
 
-    console.log('Orden ejecutada:', result);
+    console.log('✅ Orden ejecutada:', result);
     res.status(200).send({ status: 'Orden ejecutada', result });
   } catch (err) {
-    console.error('Error al ejecutar la orden:', err);
+    console.error('🛑 Error al ejecutar la orden:', err);
     res.status(500).send({ error: err.toString() });
   }
 });
 
 app.get('/', (req, res) => {
-  res.send('Bot Vallox MetaApi funcionando');
+  res.send('🤖 Bot Vallox MetaApi funcionando correctamente.');
 });
 
-const PORT = process.env.PORT || 8080;
-
-app.listen(PORT, () => {
-  console.log(`Express server is running on port ${PORT}`);
+app.listen(port, () => {
+  console.log(`🚀 Express server is running on port ${port}`);
 });
+
