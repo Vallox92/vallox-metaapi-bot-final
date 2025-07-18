@@ -14,9 +14,10 @@ const api = new MetaApi(token);
 
 app.use(bodyParser.json());
 
-app.post('/', async (req, res) => {
+app.post('/webhook', async (req, res) => {
   const signal = req.body;
-  console.log('Señal recibida:', signal);
+  console.log('Señal recibida:', signal);  // Esta línea es clave
+});
 
   try {
     const account = await api.metatraderAccountApi.getAccount(accountId);
