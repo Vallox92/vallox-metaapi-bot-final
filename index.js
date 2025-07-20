@@ -15,24 +15,26 @@ app.use(bodyParser.json());
 
 app.post('/webhook', async (req, res) => {
   const signal = req.body;
-  console.log('📡 Señal recibida:', signal);
-  try {
-    const account = await api.metatraderAccountApi.getAccount(accountId);
-    const connection = await api.metatraderAccountApi.connect(accountId); // ✅ Forma correcta
-    await connection.connect();
-    if (!connection.connected) throw new Error('Conexión no disponible');
+  console.log('📩 Señal recibida:', signal);
 
-    console.log('Conectado ✅');
+  try {
+    const connection = await api.getAccountConnection(accountId);
+    await connection.connect();
+
+    if (!connection.connected) throw new Error('Conexión no disponible');
+    console.log('✅ Conectado');
 
     const { symbol, action, lot, sl, tp } = signal;
+
     const result = await connection.createMarketOrder(symbol, action, lot, {
       stopLoss: sl,
       takeProfit: tp
     });
+
     console.log('✅ Orden ejecutada:', result);
     res.status(200).send({ status: 'Orden ejecutada', result });
   } catch (err) {
-    console.error('❗ Error al ejecutar la orden:', err);
+    console.error('❌ Error al ejecutar la orden:', err);
     res.status(500).send({ error: err.toString() });
   }
 });
@@ -44,4 +46,3 @@ app.get('/', (req, res) => {
 app.listen(port, () => {
   console.log(`🚀 Server running on http://localhost:${port}`);
 });
-
