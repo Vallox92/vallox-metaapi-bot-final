@@ -1,13 +1,14 @@
+// index.js
 import MetaApi from 'metaapi.cloud-sdk';
 import express from 'express';
-import bodyParser from 'body-parser';
 import dotenv from 'dotenv';
 
 dotenv.config();
+
 const app = express();
 const port = process.env.PORT || 8080;
 
-app.use(bodyParser.json());
+app.use(express.json());
 
 const api = new MetaApi(process.env.METAAPI_TOKEN);
 
@@ -17,33 +18,30 @@ app.post('/', async (req, res) => {
 
     // Validación básica del JSON
     if (!symbol || !action || !lot || !sl || !tp) {
-      return res.status(400).send('Error: JSON incompleto o malformado');
+      return res.status(400).send('Faltan campos en la señal.');
     }
 
-    const account = await api.metatraderAccountApi.getAccount(process.env.METAAPI_ACCOUNT_ID);
+    const account = await api.metatraderAccountApi.getAccount(process.env.ACCOUNT_ID);
     const connection = await account.getRPCConnection();
-    await connection.connect();
 
-    if (!connection.connected) {
-      return res.status(500).send('Error: no se pudo conectar con MetaApi');
+    await connection.connect();
+    if (!connection.isConnected()) {
+      return res.status(500).send('No se pudo conectar a MetaApi.');
     }
 
-    await connection.trade({
-      actionType: 'ORDER_TYPE_MARKET',
-      symbol,
-      volume: lot,
-      type: action === 'buy' ? 'ORDER_TYPE_BUY' : 'ORDER_TYPE_SELL',
+    const result = await connection.createMarketOrder(symbol, action, lot, 0, {
       stopLoss: sl,
-      takeProfit: tp,
+      takeProfit: tp
     });
 
+    console.log('Orden ejecutada:', result);
     res.status(200).send('Orden ejecutada correctamente');
-  } catch (error) {
-    console.error('Error al ejecutar la orden:', error.message);
+  } catch (err) {
+    console.error('Error al ejecutar la orden:', err);
     res.status(500).send('Error al ejecutar la orden');
   }
 });
 
 app.listen(port, () => {
-  console.log(`Servidor corriendo en el puerto ${port}`);
+  console.log(`Servidor Express activo en el puerto ${port}`);
 });
