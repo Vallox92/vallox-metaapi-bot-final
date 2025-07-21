@@ -1,50 +1,59 @@
-
-require('dotenv').config();
 const express = require('express');
 const bodyParser = require('body-parser');
 const { MetaApi } = require('metaapi.cloud-sdk');
+require('dotenv').config();
 
 const app = express();
-const port = process.env.PORT || 8080;
-
-const api = new MetaApi(process.env.METAAPI_TOKEN);
-const accountId = process.env.METAAPI_ACCOUNT_ID;
+const port = 8080;
 
 app.use(bodyParser.json());
 
+const api = new MetaApi(process.env.TOKEN);
+const accountId = process.env.ACCOUNT_ID;
+
 app.post('/webhook', async (req, res) => {
+  const { symbol, action, lot, sl, tp } = req.body;
+
+  console.log('📥 Señal recibida:', req.body);
+
+  if (!symbol || !action || !lot) {
+    return res.status(400).send('❌ JSON inválido. Requiere: symbol, action, lot.');
+  }
+
   try {
-    const { symbol, action, lot, sl, tp } = req.body;
-    console.log('Señal recibida:', req.body);
-
-    if (!symbol || !action || !lot || !sl || !tp) {
-      console.error('Error: Datos incompletos en la señal');
-      return res.status(400).json({ error: 'Datos incompletos en la señal' });
-    }
-
     const account = await api.metatraderAccountApi.getAccount(accountId);
     if (!account || account.state !== 'DEPLOYED') {
-      console.error('Error: Cuenta no está desplegada o no existe');
-      return res.status(400).json({ error: 'Cuenta no desplegada o no encontrada' });
+      return res.status(500).send('❌ La cuenta no está desplegada.');
     }
 
-    const connection = account.getRPCConnection();
+    console.log('🔁 Conectando a la cuenta...');
+    const connection = await account.getRPCConnection();
     await connection.connect();
 
-    const order = await connection.createMarketOrder(symbol, action, lot, {
+    if (!connection.isConnected()) {
+      return res.status(500).send('❌ No se pudo conectar a MetaTrader.');
+    }
+
+    const trade = {
+      symbol,
+      volume: lot,
+      type: action === 'buy' ? 'ORDER_TYPE_BUY' : 'ORDER_TYPE_SELL',
+      action: 'ORDER_TYPE_MARKET',
       stopLoss: sl,
-      takeProfit: tp
-    });
+      takeProfit: tp,
+    };
 
-    console.log('Orden ejecutada:', order);
-    res.status(200).json({ message: 'Orden ejecutada correctamente', order });
+    console.log('📤 Enviando orden:', trade);
+    const result = await connection.createMarketOrder(trade);
 
+    console.log('✅ Orden ejecutada:', result);
+    res.send('Orden ejecutada correctamente');
   } catch (err) {
-    console.error('Error al ejecutar la orden:', err.message || err);
-    res.status(500).json({ error: err.message || err });
+    console.error('❌ Error al ejecutar la orden:', err);
+    res.status(500).send('Error al ejecutar la orden');
   }
 });
 
 app.listen(port, () => {
-  console.log(`🚀 Servidor Express corriendo en el puerto ${port}`);
+  console.log(`🚀 Express server is running on port ${port}`);
 });
