@@ -1,10 +1,11 @@
 import express from 'express';
 import bodyParser from 'body-parser';
 import dotenv from 'dotenv';
-import MetaApi from 'metaapi.cloud-sdk';
+import MetaApiDefault from 'metaapi.cloud-sdk';
 
 dotenv.config();
 
+const MetaApi = MetaApiDefault.default; // ✅ Soluciona el error
 const app = express();
 const port = 8080;
 
@@ -16,7 +17,6 @@ app.post('/webhook', async (req, res) => {
   try {
     const { symbol, action, lot, sl, tp } = req.body;
 
-    // Validación básica del JSON
     if (!symbol || !action || !lot || !sl || !tp) {
       return res.status(400).send('JSON incompleto o mal estructurado');
     }
@@ -49,4 +49,3 @@ app.post('/webhook', async (req, res) => {
 app.listen(port, () => {
   console.log(`Express server is running on port ${port}`);
 });
-
