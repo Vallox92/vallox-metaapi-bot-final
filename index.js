@@ -1,51 +1,49 @@
+import MetaApi from 'metaapi.cloud-sdk';
 import express from 'express';
 import bodyParser from 'body-parser';
 import dotenv from 'dotenv';
-import MetaApiDefault from 'metaapi.cloud-sdk';
 
 dotenv.config();
-
-const MetaApi = MetaApiDefault.default; // ✅ Soluciona el error
 const app = express();
-const port = 8080;
+const port = process.env.PORT || 8080;
 
 app.use(bodyParser.json());
 
-const api = new MetaApi(process.env.TOKEN);
+const api = new MetaApi(process.env.METAAPI_TOKEN);
 
-app.post('/webhook', async (req, res) => {
+app.post('/', async (req, res) => {
   try {
     const { symbol, action, lot, sl, tp } = req.body;
 
+    // Validación básica del JSON
     if (!symbol || !action || !lot || !sl || !tp) {
-      return res.status(400).send('JSON incompleto o mal estructurado');
+      return res.status(400).send('Error: JSON incompleto o malformado');
     }
 
-    const account = await api.metatraderAccountApi.getAccount(process.env.ACCOUNT_ID);
-    if (!account || account.state !== 'DEPLOYED') {
-      return res.status(500).send('La cuenta no está desplegada o activa');
-    }
-
+    const account = await api.metatraderAccountApi.getAccount(process.env.METAAPI_ACCOUNT_ID);
     const connection = await account.getRPCConnection();
     await connection.connect();
 
     if (!connection.connected) {
-      return res.status(500).send('Error al conectar con la cuenta MetaTrader');
+      return res.status(500).send('Error: no se pudo conectar con MetaApi');
     }
 
-    const result = await connection.createMarketOrder(symbol, action, lot, {
-      stopLossInPips: sl,
-      takeProfitInPips: tp
+    await connection.trade({
+      actionType: 'ORDER_TYPE_MARKET',
+      symbol,
+      volume: lot,
+      type: action === 'buy' ? 'ORDER_TYPE_BUY' : 'ORDER_TYPE_SELL',
+      stopLoss: sl,
+      takeProfit: tp,
     });
 
-    console.log('Orden ejecutada:', result);
-    res.send('Orden ejecutada correctamente');
-  } catch (err) {
-    console.error('Error al ejecutar la orden:', err);
+    res.status(200).send('Orden ejecutada correctamente');
+  } catch (error) {
+    console.error('Error al ejecutar la orden:', error.message);
     res.status(500).send('Error al ejecutar la orden');
   }
 });
 
 app.listen(port, () => {
-  console.log(`Express server is running on port ${port}`);
+  console.log(`Servidor corriendo en el puerto ${port}`);
 });
