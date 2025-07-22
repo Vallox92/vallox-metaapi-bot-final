@@ -18,12 +18,14 @@ app.post('/webhook', async (req, res) => {
   console.log('📩 Señal recibida:', signal);
   try {
     const account = await api.metatraderAccountApi.getAccount(accountId);
-    const connection = await account.getRpcConnection();
+    const connection = account.getRPCConnection(); // 👈 esta es la forma correcta
     await connection.connect();
+    
+    if (!connection.connected) {
+      throw new Error('❌ Conexión no disponible');
+    }
 
-    if (!connection.connected) throw new Error('❌ Conexión no disponible');
-
-    console.log('✅ Conectado correctamente');
+    console.log('🟢 Conectado correctamente');
 
     const { symbol, action, lot, sl, tp } = signal;
     const result = await connection.createMarketOrder(symbol, action, lot, {
@@ -46,3 +48,4 @@ app.get('/', (req, res) => {
 app.listen(port, () => {
   console.log(`🚀 Server running on http://localhost:${port}`);
 });
+
