@@ -18,9 +18,10 @@ app.post('/webhook', async (req, res) => {
   console.log('📩 Señal recibida:', signal);
   try {
     const account = await api.metatraderAccountApi.getAccount(accountId);
-    const connection = account.getRPCConnection(); // 👈 esta es la forma correcta
+    const connection = account.getRpcConnection(); // ✅ función correcta
+
     await connection.connect();
-    
+
     if (!connection.connected) {
       throw new Error('❌ Conexión no disponible');
     }
