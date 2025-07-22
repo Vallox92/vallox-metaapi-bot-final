@@ -1,51 +1,51 @@
+require('dotenv').config();
 const express = require('express');
 const bodyParser = require('body-parser');
-const dotenv = require('dotenv');
 const MetaApi = require('metaapi.cloud-sdk').default;
-
-dotenv.config();
 
 const app = express();
 const port = process.env.PORT || 8080;
 
 app.use(bodyParser.json());
 
-const metaApi = new MetaApi(process.env.TOKEN);
+const token = process.env.TOKEN;
+const accountId = process.env.METAAPI_ACCOUNT_ID;
 
-app.post('/', async (req, res) => {
+const api = new MetaApi(token);
+
+app.post('/webhook', async (req, res) => {
   try {
     const { symbol, action, lot, sl, tp } = req.body;
 
-    // Validación de campos
     if (!symbol || !action || !lot || !sl || !tp) {
-      return res.status(400).json({ error: 'Faltan datos en el JSON de la alerta' });
+      return res.status(400).json({ error: 'Faltan campos en la señal. Debe incluir symbol, action, lot, sl y tp.' });
     }
 
-    console.log('✅ Señal recibida:', req.body);
+    console.log('📩 Señal recibida:', req.body);
+    const account = await api.metatraderAccountApi.getAccount(accountId);
 
-    const account = await metaApi.metatraderAccountApi.getAccount(process.env.METAAPI_ACCOUNT_ID);
-
-    if (!account || account.state !== 'DEPLOYED' || account.connectionStatus !== 'CONNECTED') {
-      return res.status(500).json({ error: 'La cuenta no está desplegada o conectada.' });
-    }
+    console.log('⏳ Deploying account...');
+    await account.deploy();
+    await account.waitConnected();
 
     const connection = await account.getRPCConnection();
     await connection.connect();
 
+    console.log('🚀 Ejecutando orden...');
     const result = await connection.createMarketOrder(symbol, action, lot, {
-      stopLoss: sl,
-      takeProfit: tp
+      stopLossInPips: sl,
+      takeProfitInPips: tp
     });
 
-    console.log('✅ Orden ejecutada correctamente:', result);
+    console.log('✅ Orden ejecutada:', result);
     res.send('Orden ejecutada correctamente');
-
-  } catch (error) {
-    console.error('❌ Error al ejecutar la orden:', error);
-    res.status(500).json({ error: error.message });
+  } catch (err) {
+    console.error('❌ Error al ejecutar la orden:', err);
+    res.status(500).json({ error: err.message || 'Error al procesar la orden' });
   }
 });
 
 app.listen(port, () => {
-  console.log(`✅ Servidor Express corriendo en puerto ${port}`);
+  console.log(`✅ Servidor escuchando en el puerto ${port}`);
 });
+
