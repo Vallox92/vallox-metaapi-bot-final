@@ -1,56 +1,48 @@
-import express from 'express';
-import bodyParser from 'body-parser';
+require('dotenv').config();
+const express = require('express');
+const bodyParser = require('body-parser');
 const MetaApi = require('metaapi.cloud-sdk').default;
-import dotenv from 'dotenv';
-
-dotenv.config();
 
 const app = express();
-const port = 8080;
+const port = process.env.PORT || 8080;
+
+const token = process.env.TOKEN;
+const accountId = process.env.ACCOUNT_ID;
+
+const api = new MetaApi(token);
 
 app.use(bodyParser.json());
 
-const token = process.env.METAAPI_TOKEN;
-const accountId = process.env.METAAPI_ACCOUNT_ID;
-
-const metaApi = new MetaApi(token);
-
 app.post('/webhook', async (req, res) => {
+  const signal = req.body;
+  console.log('📩 Señal recibida:', signal);
   try {
-    const { symbol, action, lot, sl, tp } = req.body;
-
-    if (!symbol || !action || !lot || !sl || !tp) {
-      return res.status(400).send('JSON inválido. Falta algún campo.');
-    }
-
-    const account = await metaApi.metatraderAccountApi.getAccount(accountId);
-    if (account.state !== 'DEPLOYED') {
-      return res.status(500).send('La cuenta no está desplegada.');
-    }
-
-    const connection = await account.getRPCConnection();
+    const account = await api.metatraderAccountApi.getAccount(accountId);
+    const connection = await account.getRpcConnection();
     await connection.connect();
 
-    const order = {
-      symbol,
-      volume: lot,
-      type: action === 'buy' ? 'ORDER_TYPE_BUY' : 'ORDER_TYPE_SELL',
-      sl,
-      tp,
-      magic: 123456,
-    };
+    if (!connection.connected) throw new Error('❌ Conexión no disponible');
 
-    const result = await connection.createMarketOrder(order);
-    console.log('Orden ejecutada:', result);
+    console.log('✅ Conectado correctamente');
 
-    res.status(200).send('Orden ejecutada correctamente');
-  } catch (error) {
-    console.error('Error al ejecutar la orden:', error);
-    res.status(500).send('Error al ejecutar la orden');
+    const { symbol, action, lot, sl, tp } = signal;
+    const result = await connection.createMarketOrder(symbol, action, lot, {
+      stopLoss: sl,
+      takeProfit: tp
+    });
+
+    console.log('✅ Orden ejecutada:', result);
+    res.status(200).send({ status: 'Orden ejecutada correctamente', result });
+  } catch (err) {
+    console.error('❌ Error al ejecutar la orden:', err);
+    res.status(500).send({ error: err.toString() });
   }
 });
 
-app.listen(port, () => {
-  console.log(`Servidor escuchando en el puerto ${port}`);
+app.get('/', (req, res) => {
+  res.send('🤖 Bot Vallox funcionando correctamente');
 });
 
+app.listen(port, () => {
+  console.log(`🚀 Server running on http://localhost:${port}`);
+});
