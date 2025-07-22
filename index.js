@@ -28,25 +28,22 @@ app.post('/webhook', async (req, res) => {
 
     if (!account) throw new Error('Cuenta no encontrada');
     if (account.state !== 'DEPLOYED') {
-      console.log('⚠️ Cuenta no desplegada. Esperando...');
+      console.log('⚠️ Cuenta no desplegada. Desplegando...');
       await account.deploy();
       await account.waitConnected();
     }
 
     console.log('🔌 Conectando con MetaApi...');
-    await account.connect();
+    const connection = await account.connect();
+    await connection.waitSynchronized();
 
-    const order = {
-      symbol,
-      type: action === 'buy' ? 'ORDER_TYPE_BUY' : 'ORDER_TYPE_SELL',
-      volume: lot,
+    console.log('📤 Ejecutando orden...');
+    const result = await connection.createMarketOrder(symbol, action.toUpperCase(), lot, {
       stopLoss: sl,
       takeProfit: tp
-    };
+    });
 
-    const result = await account.executeTrade(order);
     console.log('✅ Orden ejecutada:', result);
-
     res.status(200).send('Orden ejecutada correctamente');
   } catch (err) {
     console.error('❌ Error al ejecutar la orden:', err);
@@ -57,3 +54,4 @@ app.post('/webhook', async (req, res) => {
 app.listen(port, () => {
   console.log(`🚀 Bot corriendo en el puerto ${port}`);
 });
+
