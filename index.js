@@ -10,25 +10,31 @@ const token = process.env.TOKEN;
 const accountId = process.env.ACCOUNT_ID;
 
 const api = new MetaApi(token);
-
 app.use(bodyParser.json());
 
 app.post('/webhook', async (req, res) => {
   const signal = req.body;
   console.log('📩 Señal recibida:', signal);
+
   try {
     const account = await api.metatraderAccountApi.getAccount(accountId);
-    const connection = account.getRpcConnection(); // ✅ función correcta
 
-    await connection.connect();
-
-    if (!connection.connected) {
-      throw new Error('❌ Conexión no disponible');
+    // 🔁 Cargamos y activamos la cuenta antes de usarla
+    await account.reload();
+    if (!account.isDeployed) {
+      console.log('🚀 Deploying account...');
+      await account.deploy();
+    } else {
+      console.log('✅ Cuenta ya desplegada');
     }
 
-    console.log('🟢 Conectado correctamente');
+    const connection = account.getRpcConnection(); // ✅ Aquí ya sí funciona
+    await connection.connect();
+
+    if (!connection.connected) throw new Error('❌ Conexión no disponible');
 
     const { symbol, action, lot, sl, tp } = signal;
+
     const result = await connection.createMarketOrder(symbol, action, lot, {
       stopLoss: sl,
       takeProfit: tp
@@ -43,10 +49,10 @@ app.post('/webhook', async (req, res) => {
 });
 
 app.get('/', (req, res) => {
-  res.send('🤖 Bot Vallox funcionando correctamente');
+  res.send('🤖 Bot Vallox activo y escuchando señales');
 });
 
 app.listen(port, () => {
-  console.log(`🚀 Server running on http://localhost:${port}`);
+  console.log(`🚀 Server corriendo en puerto ${port}`);
 });
 
