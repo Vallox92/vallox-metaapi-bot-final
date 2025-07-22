@@ -1,57 +1,51 @@
-
-require('dotenv').config();
 const express = require('express');
 const bodyParser = require('body-parser');
+const dotenv = require('dotenv');
 const MetaApi = require('metaapi.cloud-sdk').default;
+
+dotenv.config();
 
 const app = express();
 const port = process.env.PORT || 8080;
 
-const token = process.env.TOKEN;
-const accountId = process.env.ACCOUNT_ID;
-
-const api = new MetaApi(token);
 app.use(bodyParser.json());
 
-app.post('/webhook', async (req, res) => {
-  const signal = req.body;
-  console.log('📩 Señal recibida:', signal);
+const metaApi = new MetaApi(process.env.TOKEN);
 
+app.post('/', async (req, res) => {
   try {
-    const account = await api.metatraderAccountApi.getAccount(accountId);
+    const { symbol, action, lot, sl, tp } = req.body;
 
-    await account.reload();
-    if (!account.isDeployed) {
-      console.log('🚀 Deploying account...');
-      await account.deploy();
-    } else {
-      console.log('✅ Cuenta ya desplegada');
+    // Validación de campos
+    if (!symbol || !action || !lot || !sl || !tp) {
+      return res.status(400).json({ error: 'Faltan datos en el JSON de la alerta' });
     }
 
-    const connection = account.getRPCConnection();
+    console.log('✅ Señal recibida:', req.body);
+
+    const account = await metaApi.metatraderAccountApi.getAccount(process.env.METAAPI_ACCOUNT_ID);
+
+    if (!account || account.state !== 'DEPLOYED' || account.connectionStatus !== 'CONNECTED') {
+      return res.status(500).json({ error: 'La cuenta no está desplegada o conectada.' });
+    }
+
+    const connection = await account.getRPCConnection();
     await connection.connect();
-
-    if (!connection.connected) throw new Error('❌ Conexión no disponible');
-
-    const { symbol, action, lot, sl, tp } = signal;
 
     const result = await connection.createMarketOrder(symbol, action, lot, {
       stopLoss: sl,
       takeProfit: tp
     });
 
-    console.log('✅ Orden ejecutada:', result);
-    res.status(200).send({ status: 'Orden ejecutada correctamente', result });
-  } catch (err) {
-    console.error('❌ Error al ejecutar la orden:', err);
-    res.status(500).send({ error: err.toString() });
+    console.log('✅ Orden ejecutada correctamente:', result);
+    res.send('Orden ejecutada correctamente');
+
+  } catch (error) {
+    console.error('❌ Error al ejecutar la orden:', error);
+    res.status(500).json({ error: error.message });
   }
 });
 
-app.get('/', (req, res) => {
-  res.send('🤖 Bot Vallox activo y escuchando señales');
-});
-
 app.listen(port, () => {
-  console.log(`🚀 Server corriendo en puerto ${port}`);
+  console.log(`✅ Servidor Express corriendo en puerto ${port}`);
 });
