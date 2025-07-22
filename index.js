@@ -1,6 +1,6 @@
 import express from 'express';
 import bodyParser from 'body-parser';
-import MetaApi from 'metaapi.cloud-sdk'.default;
+const MetaApi = require('metaapi.cloud-sdk').default;
 import dotenv from 'dotenv';
 
 dotenv.config();
