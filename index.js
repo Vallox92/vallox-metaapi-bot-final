@@ -29,7 +29,7 @@ app.post('/webhook', async (req, res) => {
     }
 
     console.log('🔁 Conectando con MetaApi...');
-    const connection = await account.getRPCConnection();
+    const connection = await account.getStreamingConnection();
     await connection.connect();
 
     if (!connection.isConnected()) {
