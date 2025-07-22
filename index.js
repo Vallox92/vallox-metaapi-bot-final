@@ -1,51 +1,61 @@
-require('dotenv').config();
 const express = require('express');
 const bodyParser = require('body-parser');
+const dotenv = require('dotenv');
 const MetaApi = require('metaapi.cloud-sdk').default;
 
+dotenv.config();
+
 const app = express();
-const port = process.env.PORT || 8080;
+const port = 8080;
 
 app.use(bodyParser.json());
 
-const token = process.env.TOKEN;
+const token = process.env.METAAPI_TOKEN;
 const accountId = process.env.METAAPI_ACCOUNT_ID;
+
 const api = new MetaApi(token);
 
-app.post('/webhook', async (req, res) => {
+app.post('/', async (req, res) => {
+  const { symbol, action, lot, sl, tp } = req.body;
+
+  // Validación de estructura
+  if (!symbol || !action || !lot || !sl || !tp) {
+    console.error('❌ Error: JSON mal estructurado');
+    return res.status(400).json({ error: 'JSON mal estructurado' });
+  }
+
+  console.log('🚀 Señal recibida:', req.body);
+  console.log('⏳ Conectando con MetaApi...');
+
   try {
-    const { symbol, action, lot, sl, tp } = req.body;
-
-    if (!symbol || !action || !lot || !sl || !tp) {
-      return res.status(400).json({ error: 'JSON inválido' });
-    }
-
-    console.log('📥 Señal recibida:', req.body);
-
     const account = await api.metatraderAccountApi.getAccount(accountId);
 
-    if (!account || account.state !== 'DEPLOYED') {
-      return res.status(500).json({ error: 'Cuenta no desplegada en MetaApi' });
+    if (!account || !account.id) {
+      throw new Error('Cuenta MetaApi no válida o no encontrada');
     }
 
-    console.log('🔁 Conectando con MetaApi...');
-    const connection = await account.getStreamingConnection();
-    await connection.connect();
+    // Conectamos correctamente usando la versión 6.3.2
+    await account.connect();
 
-    if (!connection.isConnected()) {
-      return res.status(500).json({ error: 'Error al conectar con MetaApi' });
+    // Esperamos hasta que esté listo
+    await account.waitConnected();
+
+    const connection = account.getAccountConnection();
+
+    if (!connection) {
+      throw new Error('No se pudo obtener conexión a la cuenta');
     }
 
-    const result = await connection.createMarketOrder(symbol, action, lot, {
+    const position = await connection.createMarketOrder(symbol, action, lot, {
       stopLoss: sl,
       takeProfit: tp
     });
 
-    console.log('✅ Orden ejecutada correctamente');
-    res.status(200).json({ message: 'Orden ejecutada correctamente', result });
+    console.log('✅ Orden ejecutada:', position);
+    res.status(200).send('Orden ejecutada correctamente');
   } catch (err) {
-    console.error('❌ Error al ejecutar la orden:', err);
-    res.status(500).json({ error: err.message });
+    console.error('❌ Error al ejecutar la orden:', err.message || err);
+    res.status(500).json({ error: err.message || 'Error desconocido' });
   }
 });
 
