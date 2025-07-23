@@ -1,50 +1,63 @@
-require('dotenv').config();
 const express = require('express');
 const bodyParser = require('body-parser');
 const MetaApi = require('metaapi.cloud-sdk').default;
+require('dotenv').config();
 
 const app = express();
+const port = 8080;
+
 app.use(bodyParser.json());
 
 const token = process.env.METAAPI_TOKEN;
-const accountId = process.env.ACCOUNT_ID;
+const accountId = process.env.METAAPI_ACCOUNT_ID;
 
 const api = new MetaApi(token);
 
 app.post('/webhook', async (req, res) => {
+  const data = req.body;
+
+  console.log('📩 Señal recibida:', data);
+
+  if (!data.symbol || !data.action || !data.lot || !data.sl || !data.tp) {
+    console.error('❌ Error: JSON incompleto o malformado');
+    return res.status(400).send('JSON inválido');
+  }
+
   try {
-    const { symbol, action, lot, sl, tp } = req.body;
-
-    if (!symbol || !action || !lot || !sl || !tp) {
-      return res.status(400).send('Faltan parámetros en el JSON.');
-    }
-
     const account = await api.metatraderAccountApi.getAccount(accountId);
-    if (account.state !== 'DEPLOYED') {
-      return res.status(500).send('La cuenta no está desplegada.');
-    }
 
+    console.log('⏳ Conectando con MetaApi...');
     await account.connect();
-    const connection = account.getRPCConnection();
+
+    const connection = account.getStreamingConnection();
     await connection.waitSynchronized();
 
-    const trade = {
-      symbol,
-      type: action === 'buy' ? 'ORDER_TYPE_BUY' : 'ORDER_TYPE_SELL',
-      volume: lot,
-      stopLoss: sl,
-      takeProfit: tp
+    const order = {
+      symbol: data.symbol,
+      type: data.action === 'buy' ? 'ORDER_TYPE_BUY' : 'ORDER_TYPE_SELL',
+      volume: data.lot,
+      stopLoss: data.sl,
+      takeProfit: data.tp,
+      magic: 123456,
+      comment: 'Orden ejecutada por bot Vallox',
     };
 
-    const result = await connection.createMarketOrder(trade);
-    console.log('Orden ejecutada:', result);
-    res.status(200).send('Orden ejecutada correctamente');
+    const result = await connection.trade(order);
+
+    if (result && result.stringCode === 'TRADE_RETCODE_DONE') {
+      console.log('✅ Orden ejecutada correctamente');
+      res.send('Orden ejecutada correctamente');
+    } else {
+      console.error('❌ Error en la orden:', result);
+      res.status(500).send('Error en la ejecución');
+    }
   } catch (err) {
-    console.error('Error al ejecutar la orden:', err);
-    res.status(500).send('Error al ejecutar la orden');
+    console.error('❌ Error general:', err.message);
+    res.status(500).send('Error en el servidor');
   }
 });
 
-app.listen(8080, () => {
-  console.log('Servidor iniciado en el puerto 8080');
+app.listen(port, () => {
+  console.log(`✅ Bot funcionando en el puerto ${port}`);
 });
+
