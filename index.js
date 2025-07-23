@@ -1,52 +1,50 @@
+require('dotenv').config();
 const express = require('express');
 const bodyParser = require('body-parser');
-const dotenv = require('dotenv');
 const MetaApi = require('metaapi.cloud-sdk').default;
 
-dotenv.config();
 const app = express();
-const port = 8080;
-
 app.use(bodyParser.json());
 
-const token = process.env.TOKEN;
+const token = process.env.METAAPI_TOKEN;
 const accountId = process.env.ACCOUNT_ID;
+
 const api = new MetaApi(token);
 
 app.post('/webhook', async (req, res) => {
-  const { symbol, action, lot, sl, tp } = req.body;
-
-  console.log('🔔 Señal recibida:', req.body);
-  console.log('Conectando con MetaApi...');
-
   try {
+    const { symbol, action, lot, sl, tp } = req.body;
+
+    if (!symbol || !action || !lot || !sl || !tp) {
+      return res.status(400).send('Faltan parámetros en el JSON.');
+    }
+
     const account = await api.metatraderAccountApi.getAccount(accountId);
-    if (!account) throw new Error('Cuenta no encontrada');
+    if (account.state !== 'DEPLOYED') {
+      return res.status(500).send('La cuenta no está desplegada.');
+    }
 
-    await account.waitConnected(); // Espera a que esté lista
+    await account.connect();
+    const connection = account.getRPCConnection();
+    await connection.waitSynchronized();
 
-    if (account.state !== 'DEPLOYED') throw new Error('Cuenta no desplegada');
-    if (account.connectionStatus !== 'CONNECTED') throw new Error('Cuenta no conectada');
-
-    await account.connect(); // <<--- EL MÉTODO CORRECTO EN TU SDK
-
-    const result = await account.executeTrade({
-      actionType: 'ORDER_TYPE_MARKET',
+    const trade = {
       symbol,
-      volume: lot,
       type: action === 'buy' ? 'ORDER_TYPE_BUY' : 'ORDER_TYPE_SELL',
+      volume: lot,
       stopLoss: sl,
       takeProfit: tp
-    });
+    };
 
-    console.log('✅ Orden ejecutada:', result);
+    const result = await connection.createMarketOrder(trade);
+    console.log('Orden ejecutada:', result);
     res.status(200).send('Orden ejecutada correctamente');
   } catch (err) {
-    console.error('❌ Error al ejecutar la orden:', err.message);
-    res.status(500).send('Error al ejecutar la orden: ' + err.message);
+    console.error('Error al ejecutar la orden:', err);
+    res.status(500).send('Error al ejecutar la orden');
   }
 });
 
-app.listen(port, () => {
-  console.log(`✅ Bot funcionando en el puerto ${port}`);
+app.listen(8080, () => {
+  console.log('Servidor iniciado en el puerto 8080');
 });
