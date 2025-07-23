@@ -19,41 +19,37 @@ app.post('/webhook', async (req, res) => {
   console.log('📩 Señal recibida:', data);
 
   if (!data.symbol || !data.action || !data.lot || !data.sl || !data.tp) {
-    console.error('❌ Error: JSON incompleto o malformado');
+    console.error('❌ JSON inválido');
     return res.status(400).send('JSON inválido');
   }
 
   try {
     const account = await api.metatraderAccountApi.getAccount(accountId);
-
     console.log('⏳ Conectando con MetaApi...');
     await account.connect();
 
-    const connection = account.getStreamingConnection();
-    await connection.waitSynchronized();
-
-    const order = {
+    const trade = {
       symbol: data.symbol,
       type: data.action === 'buy' ? 'ORDER_TYPE_BUY' : 'ORDER_TYPE_SELL',
       volume: data.lot,
       stopLoss: data.sl,
       takeProfit: data.tp,
+      comment: 'Orden ejecutada por Vallox',
       magic: 123456,
-      comment: 'Orden ejecutada por bot Vallox',
     };
 
-    const result = await connection.trade(order);
+    const result = await account.executeTrade(trade);
 
-    if (result && result.stringCode === 'TRADE_RETCODE_DONE') {
+    if (result.stringCode === 'TRADE_RETCODE_DONE') {
       console.log('✅ Orden ejecutada correctamente');
-      res.send('Orden ejecutada correctamente');
+      return res.status(200).send('Orden ejecutada correctamente');
     } else {
-      console.error('❌ Error en la orden:', result);
-      res.status(500).send('Error en la ejecución');
+      console.error('❌ Falló la orden:', result);
+      return res.status(500).send('Fallo en ejecución: ' + result.stringCode);
     }
   } catch (err) {
     console.error('❌ Error general:', err.message);
-    res.status(500).send('Error en el servidor');
+    return res.status(500).send('Error al ejecutar la orden');
   }
 });
 
