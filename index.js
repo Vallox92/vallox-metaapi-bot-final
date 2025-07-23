@@ -1,59 +1,50 @@
+require('dotenv').config();
 const express = require('express');
 const bodyParser = require('body-parser');
 const MetaApi = require('metaapi.cloud-sdk').default;
-require('dotenv').config();
 
 const app = express();
-const port = 8080;
-
 app.use(bodyParser.json());
 
+const port = 8080;
 const token = process.env.METAAPI_TOKEN;
 const accountId = process.env.METAAPI_ACCOUNT_ID;
 
 const api = new MetaApi(token);
 
 app.post('/webhook', async (req, res) => {
-  const data = req.body;
+  const { symbol, action, lot, sl, tp } = req.body;
 
-  console.log('📩 Señal recibida:', data);
-
-  if (!data.symbol || !data.action || !data.lot || !data.sl || !data.tp) {
-    console.error('❌ JSON inválido');
-    return res.status(400).send('JSON inválido');
-  }
+  console.log('\n📩 Señal recibida:', req.body);
+  console.log('🔄 Conectando con MetaApi...');
 
   try {
     const account = await api.metatraderAccountApi.getAccount(accountId);
-    console.log('⏳ Conectando con MetaApi...');
     await account.connect();
 
-    const trade = {
-      symbol: data.symbol,
-      type: data.action === 'buy' ? 'ORDER_TYPE_BUY' : 'ORDER_TYPE_SELL',
-      volume: data.lot,
-      stopLoss: data.sl,
-      takeProfit: data.tp,
-      comment: 'Orden ejecutada por Vallox',
-      magic: 123456,
-    };
+    console.log('✅ Conectado. Esperando a que esté listo...');
+    await account.waitConnected();
 
-    const result = await account.executeTrade(trade);
-
-    if (result.stringCode === 'TRADE_RETCODE_DONE') {
-      console.log('✅ Orden ejecutada correctamente');
-      return res.status(200).send('Orden ejecutada correctamente');
-    } else {
-      console.error('❌ Falló la orden:', result);
-      return res.status(500).send('Fallo en ejecución: ' + result.stringCode);
+    if (!account.connected || !account.accountInformation) {
+      throw new Error('⛔️ No está conectado o no hay información de la cuenta.');
     }
+
+    console.log(`📊 Ejecutando orden ${action.toUpperCase()} ${symbol} con lotaje ${lot}`);
+
+    await account.trade().createMarketOrder(symbol, action, lot, {
+      stopLoss: sl,
+      takeProfit: tp
+    });
+
+    console.log('✅ Orden ejecutada correctamente');
+    res.send('Orden ejecutada correctamente');
+
   } catch (err) {
-    console.error('❌ Error general:', err.message);
-    return res.status(500).send('Error al ejecutar la orden');
+    console.error('❌ Error al ejecutar la orden:', err.message);
+    res.status(500).send('Error al ejecutar la orden');
   }
 });
 
 app.listen(port, () => {
-  console.log(`✅ Bot funcionando en el puerto ${port}`);
+  console.log(`\n🚀 Bot funcionando en el puerto ${port}`);
 });
-
