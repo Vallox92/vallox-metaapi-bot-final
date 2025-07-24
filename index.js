@@ -17,7 +17,6 @@ app.post('/webhook', async (req, res) => {
   const signal = req.body;
   console.log('📩 Señal recibida:', signal);
 
-  // Validar que los datos estén completos
   if (!signal.symbol || !signal.action || !signal.lot || !signal.sl || !signal.tp) {
     console.log('❌ Error: Faltan datos en la señal');
     return res.status(400).send('Faltan datos en la señal');
@@ -26,17 +25,10 @@ app.post('/webhook', async (req, res) => {
   try {
     console.log('🔌 Conectando con MetaApi...');
     const account = await api.metatraderAccountApi.getAccount(accountId);
-
-    if (!account || !accountId) {
-      console.log('❌ Cuenta no encontrada o ID no válido');
-      return res.status(404).send('Cuenta no encontrada');
-    }
-
-    const connection = await account.getRPCConnection();
-    await connection.connect();
+    await account.connect(); // ✅ CORREGIDO: función válida
 
     console.log('✅ Conectado. Esperando a que esté listo...');
-    await connection.waitSynchronized();
+    await account.waitConnected();
 
     const order = {
       symbol: signal.symbol,
@@ -47,7 +39,7 @@ app.post('/webhook', async (req, res) => {
     };
 
     console.log('📤 Enviando orden:', order);
-    const result = await connection.createMarketOrder(order);
+    const result = await account.createMarketOrder(order); // ✅ CORREGIDO
 
     console.log('✅ Orden ejecutada correctamente:', result);
     res.send('Orden ejecutada correctamente');
