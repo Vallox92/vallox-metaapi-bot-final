@@ -1,54 +1,59 @@
-const express = require('express');
-const bodyParser = require('body-parser');
-const MetaApi = require('metaapi.cloud-sdk').default;
 require('dotenv').config();
+const express = require('express');
+const MetaApi = require('metaapi.cloud-sdk').default;
 
 const app = express();
-const port = 8080;
+const port = process.env.PORT || 8080;
 
-app.use(bodyParser.json());
-
-const token = process.env.TOKEN;
-const accountId = process.env.ACCOUNT_ID;
+const token = process.env.META_API_TOKEN;
+const accountId = process.env.META_API_ACCOUNT_ID;
 
 const api = new MetaApi(token);
+app.use(express.json());
 
 app.post('/webhook', async (req, res) => {
-  const signal = req.body;
-  console.log('📩 Señal recibida:', signal);
-
-  if (!signal.symbol || !signal.action || !signal.lot || !signal.sl || !signal.tp) {
-    console.log('❌ Error: Faltan datos en la señal');
-    return res.status(400).send('Faltan datos en la señal');
-  }
-
   try {
-    console.log('🔌 Conectando con MetaApi...');
+    const { symbol, action, lot, sl, tp } = req.body;
+
+    if (!symbol || !action || !lot || !sl || !tp) {
+      console.log('⚠️ JSON incompleto:', req.body);
+      return res.status(400).send('JSON inválido. Faltan campos.');
+    }
+
     const account = await api.metatraderAccountApi.getAccount(accountId);
-    await account.connect(); // ✅ CORREGIDO: función válida
+    if (!account || account.state !== 'DEPLOYED') {
+      console.log('⚠️ Cuenta no desplegada:', accountId);
+      return res.status(500).send('Cuenta no desplegada o incorrecta.');
+    }
 
-    console.log('✅ Conectado. Esperando a que esté listo...');
-    await account.waitConnected();
+    console.log('⏳ Conectando a la cuenta...');
+    const connection = await account.getRPCConnection();
+    await connection.connect();
 
-    const order = {
-      symbol: signal.symbol,
-      type: signal.action === 'buy' ? 'ORDER_TYPE_BUY' : 'ORDER_TYPE_SELL',
-      volume: signal.lot,
-      stopLoss: signal.sl,
-      takeProfit: signal.tp
-    };
+    if (!connection.isConnected()) {
+      console.log('❌ No se pudo conectar a MetaApi');
+      return res.status(500).send('No se pudo conectar a MetaApi');
+    }
 
-    console.log('📤 Enviando orden:', order);
-    const result = await account.createMarketOrder(order); // ✅ CORREGIDO
+    console.log('✅ Conectado. Enviando orden:', { symbol, action, lot, sl, tp });
 
-    console.log('✅ Orden ejecutada correctamente:', result);
+    await connection.trade({
+      actionType: 'ORDER_TYPE_MARKET',
+      symbol,
+      volume: lot,
+      type: action === 'buy' ? 'ORDER_TYPE_BUY' : 'ORDER_TYPE_SELL',
+      stopLoss: sl,
+      takeProfit: tp
+    });
+
+    console.log('✅ Orden ejecutada correctamente');
     res.send('Orden ejecutada correctamente');
   } catch (err) {
-    console.error('❌ Error al ejecutar la orden:', err.message);
-    res.status(500).send('Error al ejecutar la orden: ' + err.message);
+    console.error('🔥 Error al ejecutar orden:', err);
+    res.status(500).send('Error al ejecutar orden');
   }
 });
 
 app.listen(port, () => {
-  console.log(`🚀 Bot funcionando en el puerto ${port}`);
+  console.log(`🚀 Bot de trading escuchando en el puerto ${port}`);
 });
