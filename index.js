@@ -1,7 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const bodyParser = require('body-parser');
-const MetaApi = require('metaapi.cloud-sdk').default;
+const MetaApi = require('metaapi.cloud-sdk');
 
 const app = express();
 const port = process.env.PORT || 8080;
@@ -15,7 +15,7 @@ const api = new MetaApi(token);
 
 app.post('/webhook', async (req, res) => {
   const data = req.body;
-  console.log('🟢 Señal recibida:', data);
+  console.log('📩 Señal recibida:', data);
 
   if (!data.symbol || !data.action || !data.lot || !data.sl || !data.tp) {
     console.error('🔴 JSON incompleto o inválido');
@@ -51,7 +51,7 @@ app.post('/webhook', async (req, res) => {
     res.send('Orden ejecutada correctamente');
   } catch (err) {
     console.error('❌ Error al ejecutar orden:', err.message || err);
-    res.status(500).send('Error al ejecutar la orden: ' + (err.message || err));
+    res.status(500).send(`Error al ejecutar la orden: ${err.message || err}`);
   }
 });
 
