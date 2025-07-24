@@ -1,59 +1,70 @@
-require('dotenv').config();
 const express = require('express');
+const bodyParser = require('body-parser');
 const MetaApi = require('metaapi.cloud-sdk').default;
+require('dotenv').config();
 
 const app = express();
-const port = process.env.PORT || 8080;
+app.use(bodyParser.json());
 
-const token = process.env.META_API_TOKEN;
-const accountId = process.env.META_API_ACCOUNT_ID;
+const token = process.env.TOKEN;
+const accountId = process.env.ACCOUNT_ID;
 
-const api = new MetaApi(token);
-app.use(express.json());
+const metaapi = new MetaApi(token);
 
 app.post('/webhook', async (req, res) => {
   try {
-    const { symbol, action, lot, sl, tp } = req.body;
+    const data = req.body;
 
-    if (!symbol || !action || !lot || !sl || !tp) {
-      console.log('⚠️ JSON incompleto:', req.body);
-      return res.status(400).send('JSON inválido. Faltan campos.');
+    // Validar estructura del JSON
+    if (!data.symbol || !data.action || !data.lot || !data.sl || !data.tp) {
+      return res.status(400).json({ error: 'Faltan campos en el JSON' });
     }
 
-    const account = await api.metatraderAccountApi.getAccount(accountId);
-    if (!account || account.state !== 'DEPLOYED') {
-      console.log('⚠️ Cuenta no desplegada:', accountId);
-      return res.status(500).send('Cuenta no desplegada o incorrecta.');
+    console.log('✅ Señal recibida:', data);
+
+    const account = await metaapi.metatraderAccountApi.getAccount(accountId);
+
+    if (account.state !== 'DEPLOYED') {
+      return res.status(400).json({ error: 'La cuenta no está desplegada' });
     }
 
-    console.log('⏳ Conectando a la cuenta...');
+    if (!account.connectionStatus || account.connectionStatus !== 'CONNECTED') {
+      return res.status(400).json({ error: 'La cuenta no está conectada a MetaTrader' });
+    }
+
     const connection = await account.getRPCConnection();
     await connection.connect();
 
-    if (!connection.isConnected()) {
-      console.log('❌ No se pudo conectar a MetaApi');
-      return res.status(500).send('No se pudo conectar a MetaApi');
+    const action = data.action.toLowerCase();
+    const trade = {
+      symbol: data.symbol,
+      volume: data.lot,
+      stopLoss: data.sl,
+      takeProfit: data.tp,
+      type: action === 'buy' ? 'ORDER_TYPE_BUY' : 'ORDER_TYPE_SELL'
+    };
+
+    const result = await connection.trade(trade);
+
+    if (result.stringCode === 'TRADE_RETCODE_DONE') {
+      console.log('🚀 Orden ejecutada correctamente');
+      return res.status(200).json({ message: 'Orden ejecutada correctamente' });
+    } else {
+      console.error('⚠️ Error en la ejecución:', result);
+      return res.status(500).json({ error: 'Fallo en ejecución de orden', result });
     }
-
-    console.log('✅ Conectado. Enviando orden:', { symbol, action, lot, sl, tp });
-
-    await connection.trade({
-      actionType: 'ORDER_TYPE_MARKET',
-      symbol,
-      volume: lot,
-      type: action === 'buy' ? 'ORDER_TYPE_BUY' : 'ORDER_TYPE_SELL',
-      stopLoss: sl,
-      takeProfit: tp
-    });
-
-    console.log('✅ Orden ejecutada correctamente');
-    res.send('Orden ejecutada correctamente');
-  } catch (err) {
-    console.error('🔥 Error al ejecutar orden:', err);
-    res.status(500).send('Error al ejecutar orden');
+  } catch (error) {
+    console.error('❌ Error general:', error);
+    res.status(500).json({ error: 'Error al procesar la orden', details: error.message });
   }
 });
 
-app.listen(port, () => {
-  console.log(`🚀 Bot de trading escuchando en el puerto ${port}`);
+app.get('/', (req, res) => {
+  res.send('Vallox MetaAPI Bot en línea ✅');
 });
+
+const PORT = process.env.PORT || 8080;
+app.listen(PORT, () => {
+  console.log(`🚀 Servidor Express escuchando en el puerto ${PORT}`);
+});
+
