@@ -17,45 +17,33 @@ app.post('/webhook', async (req, res) => {
   const data = req.body;
   console.log('📩 Señal recibida:', data);
 
-  if (!data.symbol || !data.action || !data.lot || !data.sl || !data.tp) {
-    console.error('🔴 JSON incompleto o inválido');
-    return res.status(400).send('JSON incompleto o inválido');
-  }
-
   try {
-    console.log('🔑 Conectando con MetaApi...');
+    console.log('🔑 Pidiendo cuenta…');
     const account = await api.metatraderAccountApi.getAccount(accountId);
 
-    if (account.state !== 'DEPLOYED') {
-      console.error('🔴 Cuenta no está desplegada.');
-      return res.status(500).send('La cuenta no está desplegada en MetaApi');
+    // --- DEBUG DURO: qué clase es y qué métodos tiene realmente
+    console.log('👉 account.constructor.name =', account && account.constructor && account.constructor.name);
+    console.log('👉 typeof account =', typeof account);
+    if (account) {
+      console.log('👉 keys(account) =', Object.keys(account));
+      console.log('👉 proto methods =', Object.getOwnPropertyNames(Object.getPrototypeOf(account)));
     }
 
-    console.log('🟢 Cuenta desplegada, conectando...');
-    const connection = await account.getStreamingConnection();
-    await connection.connect();
-    await connection.waitSynchronized();
+    console.log('state:', account.state, 'connectionStatus:', account.connectionStatus);
 
-    const rpc = await connection.rpc;
+    // También probamos a ver si existen estos métodos antes de llamarlos
+    console.log('has getRPCConnection?', typeof account.getRPCConnection);
+    console.log('has getStreamingConnection?', typeof account.getStreamingConnection);
+    console.log('has connect?', typeof account.connect);
+    console.log('has trade?', typeof account.trade);
 
-    const result = await rpc.trade({
-      actionType: 'ORDER_TYPE_MARKET',
-      symbol: data.symbol,
-      volume: data.lot,
-      type: data.action === 'buy' ? 'ORDER_TYPE_BUY' : 'ORDER_TYPE_SELL',
-      stopLoss: data.sl,
-      takeProfit: data.tp
-    });
-
-    console.log('✅ Orden ejecutada correctamente:', result);
-    res.send('Orden ejecutada correctamente');
+    return res.send('Debug impreso, revisa logs');
   } catch (err) {
-    console.error('❌ Error al ejecutar orden:', err.message || err);
-    res.status(500).send(`Error al ejecutar la orden: ${err.message || err}`);
+    console.error('❌ Error debug:', err);
+    return res.status(500).send(err.message || String(err));
   }
 });
 
 app.listen(port, () => {
   console.log(`🟢 Bot escuchando en puerto ${port}`);
 });
-
