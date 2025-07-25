@@ -1,6 +1,5 @@
 require('dotenv').config();
-
-// <<< Parche para el error "certificate has expired"
+// (opcional) evita que el error del certificado vuelva a bloquearte
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 
 const https = require('https');
@@ -13,23 +12,21 @@ const port = process.env.PORT || 8080;
 
 const METAAPI_TOKEN = process.env.METAAPI_TOKEN;
 const METAAPI_ACCOUNT_ID = process.env.METAAPI_ACCOUNT_ID;
-const METAAPI_BASE_URL = 'https://metaapi.cloud';
+// si usas otra región en MetaApi, cámbiala aquí (ej.: 'london', 'tokyo', etc.)
+const METAAPI_REGION = process.env.METAAPI_REGION || 'new-york';
 
 if (!METAAPI_TOKEN || !METAAPI_ACCOUNT_ID) {
-  console.error('❌ METAAPI_TOKEN o METAAPI_ACCOUNT_ID no están definidos en las variables de entorno');
+  console.error('❌ Faltan variables de entorno METAAPI_TOKEN o METAAPI_ACCOUNT_ID');
   process.exit(1);
 }
 
 app.use(bodyParser.json());
 
-// agente https que ignora el certificado expirado
+// agente https para ignorar validación de certificados (solo mientras resolvemos el 404/SSL)
 const httpsAgent = new https.Agent({ rejectUnauthorized: false });
 
-/**
- * Envía una orden de mercado a MetaApi vía REST
- */
 async function sendMarketOrder(signal) {
-  const url = `${METAAPI_BASE_URL}/users/current/accounts/${METAAPI_ACCOUNT_ID}/trade`;
+  const url = `https://mt-client-api-v1.${METAAPI_REGION}.agiliumtrade.ai/users/current/accounts/${METAAPI_ACCOUNT_ID}/trade`;
 
   const payload = {
     actionType: 'ORDER_TYPE_MARKET',
@@ -40,26 +37,21 @@ async function sendMarketOrder(signal) {
     takeProfit: Number(signal.tp)
   };
 
-  console.log('🚀 Enviando orden a MetaApi...', payload);
-
   const headers = {
     'auth-token': METAAPI_TOKEN,
     'Content-Type': 'application/json'
   };
 
+  console.log('🚀 Enviando orden a MetaApi:', payload, '->', url);
   const res = await axios.post(url, payload, { headers, httpsAgent });
   return res.data;
 }
 
-/**
- * Webhook que recibe la alerta de TradingView
- */
 app.post('/webhook', async (req, res) => {
   const data = req.body;
   console.log('📩 Señal recibida:', data);
 
-  // Validar JSON
-  if (!data.symbol || !data.action || !data.lot || data.sl == null || data.tp == null) {
+  if (!data.symbol || !data.action || data.lot == null || data.sl == null || data.tp == null) {
     console.error('🔴 JSON incompleto o inválido');
     return res.status(400).send('JSON incompleto o inválido');
   }
@@ -71,16 +63,19 @@ app.post('/webhook', async (req, res) => {
   } catch (err) {
     const status = err.response?.status;
     const body = err.response?.data;
-    console.error('❌ Error general:', err.message, 'status:', status, 'body:', body);
-    return res
-      .status(status || 500)
-      .send(`Error al ejecutar la orden: ${err.message}`);
+    console.error('❌ Error general:',
+      status ? `HTTP ${status}` : '',
+      err.message,
+      body ? `\nBODY: ${JSON.stringify(body).slice(0, 500)}...` : ''
+    );
+    return res.status(status || 500).send(`Error al ejecutar la orden: ${err.message}`);
   }
 });
 
 app.get('/', (_req, res) => res.send('Bot vivo ✅'));
-app.get('/health', (_req, res) => res.send('ok'));
 
 app.listen(port, () => {
   console.log(`🟢 Bot escuchando en puerto ${port}`);
+  console.log(`   Envía tus alertas a: https://<tu-servicio>.onrender.com/webhook`);
 });
+
