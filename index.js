@@ -1,3 +1,4 @@
+
 // index.js
 require('dotenv').config();
 const express = require('express');
@@ -32,15 +33,13 @@ app.post('/webhook', async (req, res) => {
   }
 
   // Construimos el payload que espera MetaApi REST
-const payload = {
-  actionType: action.toLowerCase() === 'buy' ? 'ORDER_TYPE_BUY' : 'ORDER_TYPE_SELL',
-  symbol,
-  volume: Number(lot),
-  stopLoss: Number(sl),
-  stopLossUnits: (data.units || 'POINTS'),      // <-- aquí
-  takeProfit: Number(tp),
-  takeProfitUnits: (data.units || 'POINTS')     // <-- aquí
-};
+  const payload = {
+    actionType: action.toLowerCase() === 'buy' ? 'ORDER_TYPE_BUY' : 'ORDER_TYPE_SELL',
+    symbol,
+    volume: Number(lot),
+    stopLoss: Number(sl),
+    takeProfit: Number(tp)
+  };
 
   const url = `https://mt-client-api-v1.new-york.agiliumtrade.ai/users/current/accounts/${ACCOUNT_ID}/trade`;
 
@@ -73,5 +72,3 @@ const payload = {
 app.listen(port, () => {
   console.log(`🟢 Bot escuchando en puerto ${port}`);
 });
-
-
