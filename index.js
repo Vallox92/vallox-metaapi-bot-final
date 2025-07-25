@@ -1,54 +1,74 @@
+// index.js
 require('dotenv').config();
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
-
 const express = require('express');
+const bodyParser = require('body-parser');
 const axios = require('axios');
-const https = require('https');
 
 const app = express();
-app.use(express.json());
+const port = process.env.PORT || 8080;
 
-const PORT = process.env.PORT || 8080;
-const TOKEN = process.env.METAAPI_TOKEN;
-const ACCOUNT_ID = process.env.METAAPI_ACCOUNT_ID;
-const REGION = process.env.METAAPI_REGION || 'new-york';
+const TOKEN = process.env.METAAPI_TOKEN || process.env.TOKEN;
+const ACCOUNT_ID = process.env.METAAPI_ACCOUNT_ID || process.env.ACCOUNT_ID;
 
-const TRADE_URL = `https://mt-client-api-v1.${REGION}.agiliumtrade.ai/users/current/accounts/${ACCOUNT_ID}/trade`;
-const httpsAgent = new https.Agent({ rejectUnauthorized: false });
+if (!TOKEN || !ACCOUNT_ID) {
+  console.error('❌ Faltan variables de entorno METAAPI_TOKEN o METAAPI_ACCOUNT_ID');
+  process.exit(1);
+}
+
+app.use(bodyParser.json());
+
+app.get('/', (_req, res) => res.send('✅ Bot vivo'));
 
 app.post('/webhook', async (req, res) => {
-  console.log('📩 Señal recibida:', req.body);
+  const data = req.body;
+  console.log('📩 Señal recibida:', data);
 
-  const { symbol, action, lot, sl, tp } = req.body || {};
+  const { symbol, action, lot, sl, tp } = data || {};
+
+  // Validación básica
   if (!symbol || !action || lot == null || sl == null || tp == null) {
+    console.error('🔴 JSON incompleto o inválido');
     return res.status(400).send('JSON incompleto o inválido');
   }
 
+  // Construimos el payload que espera MetaApi REST
   const payload = {
+    actionType: action.toLowerCase() === 'buy' ? 'ORDER_TYPE_BUY' : 'ORDER_TYPE_SELL',
     symbol,
     volume: Number(lot),
-    type: action.toLowerCase() === 'buy' ? 'BUY' : 'SELL',
-    positionId: null,
     stopLoss: Number(sl),
     takeProfit: Number(tp)
   };
 
+  const url = `https://mt-client-api-v1.new-york.agiliumtrade.ai/users/current/accounts/${ACCOUNT_ID}/trade`;
+
+  console.log('🚀 Enviando orden a MetaApi:', payload);
+  console.log('🔗 ->', url);
+
   try {
-    console.log('🚀 Enviando orden a MetaApi:', payload);
-    const r = await axios.post(TRADE_URL, payload, {
-      headers: { 'auth-token': TOKEN, 'Content-Type': 'application/json' },
-      httpsAgent
+    const response = await axios.post(url, payload, {
+      headers: {
+        'auth-token': TOKEN,
+        'Content-Type': 'application/json'
+      },
+      timeout: 15000
     });
-    console.log('✅ Orden ejecutada correctamente:', r.data);
-    return res.status(200).send('Orden ejecutada correctamente');
+
+    console.log('✅ Orden ejecutada:', response.data);
+    return res.status(200).json({ ok: true, result: response.data });
   } catch (err) {
-    console.error('❌ Error al ejecutar orden:',
-      err.response?.status,
-      err.response?.data || err.message
-    );
-    return res.status(500).send(`Error al ejecutar la orden: ${err.message}`);
+    // Log detallado del error
+    const status = err.response?.status;
+    const body = err.response?.data;
+    console.error('❌ Error al ejecutar orden:', status, body || err.message);
+    return res.status(status || 500).json({
+      ok: false,
+      error: body || err.message
+    });
   }
 });
 
-app.listen(PORT, () => console.log(`🚀 Bot escuchando en puerto ${PORT}`));
+app.listen(port, () => {
+  console.log(`🟢 Bot escuchando en puerto ${port}`);
+});
 
