@@ -17,6 +17,7 @@ if (!TOKEN || !ACCOUNT_ID) {
 
 app.use(bodyParser.json());
 
+// simple healthcheck
 app.get('/', (_req, res) => res.send('✅ Bot vivo'));
 
 app.post('/webhook', async (req, res) => {
@@ -25,54 +26,92 @@ app.post('/webhook', async (req, res) => {
 
   const { symbol, action, lot, sl, tp, units } = data || {};
 
-  if (!symbol || !action || !lot || sl == null || tp == null) {
+  // Validación básica
+  if (!symbol || !action || lot == null || sl == null || tp == null) {
     console.error('🔴 JSON incompleto o inválido');
     return res.status(400).send('JSON incompleto o inválido');
   }
 
+  // ------------------------------------------------------------------
+  // 1) Intentar obtener especificaciones y precio del símbolo
+  // ------------------------------------------------------------------
+  let currentPrice = null;
+  let point = 0.01; // fallback por si no lo obtenemos
   try {
-    // 1) Traemos info del símbolo (precio actual) para poder convertir POINTS -> precio
-    let currentPrice = null;
-    try {
-      const priceResponse = await axios.get(
-        `https://mt-client-api-v1.new-york.agiliumtrade.ai/users/current/accounts/${ACCOUNT_ID}/symbols/${symbol}`,
-        { headers: { 'auth-token': TOKEN } }
-      );
-      currentPrice = priceResponse.data.price ?? priceResponse.data.bid ?? priceResponse.data.ask;
-      console.log('💰 currentPrice:', currentPrice);
-    } catch (e) {
-      console.warn('⚠️ No pude obtener el precio del símbolo, uso stops tal cual vienen');
+    // intenta obtener specs del símbolo
+    const specUrl = `https://mt-client-api-v1.new-york.agiliumtrade.ai/users/current/accounts/${ACCOUNT_ID}/symbols/${symbol}`;
+    const specResp = await axios.get(specUrl, {
+      headers: { 'auth-token': TOKEN }
+    });
+
+    // intenta sacar tickSize/point
+    const info = specResp.data || {};
+    // algunos campos que pueden venir
+    // info.tickSize, info.tickValue, info.digits, info.price
+    if (typeof info.tickSize === 'number' && info.tickSize > 0) {
+      point = info.tickSize;
+    } else if (typeof info.digits === 'number') {
+      point = 1 / Math.pow(10, info.digits);
     }
 
-    const pointValue = 0.01; // Para GOLD en la mayoría de brokers (revisa si en tu cuenta es 0.01)
+    // precio actual
+    currentPrice = info.price || info.bid || info.ask || null;
+    console.log('ℹ️ symbol spec:', { point, currentPrice });
+  } catch (e) {
+    console.warn('⚠️ No pude obtener especificaciones/precio del símbolo, usaré defaults. Motivo:', e.response?.data || e.message);
+  }
 
-    // 2) Convertimos SL/TP si vienen en POINTS
-    let stopLoss = sl;
-    let takeProfit = tp;
-    if (units && units.toUpperCase() === 'POINTS' && currentPrice) {
-      if (action.toLowerCase() === 'buy') {
-        stopLoss = currentPrice - sl * pointValue;
-        takeProfit = currentPrice + tp * pointValue;
+  // ------------------------------------------------------------------
+  // 2) Convertir SL / TP si vienen en POINTS
+  // ------------------------------------------------------------------
+  let stopLoss = sl;
+  let takeProfit = tp;
+
+  const actionIsBuy = action.toLowerCase() === 'buy';
+  if (units && units.toUpperCase() === 'POINTS') {
+    if (!currentPrice) {
+      console.warn('⚠️ No pude obtener el precio del símbolo, uso los stops tal cual vienen (puede fallar con INVALID_STOPS)');
+    } else {
+      const pointsToPrice = (p) => p * point; // conversión
+      if (actionIsBuy) {
+        stopLoss = currentPrice - pointsToPrice(sl);
+        takeProfit = currentPrice + pointsToPrice(tp);
       } else {
-        stopLoss = currentPrice + sl * pointValue;
-        takeProfit = currentPrice - tp * pointValue;
+        stopLoss = currentPrice + pointsToPrice(sl);
+        takeProfit = currentPrice - pointsToPrice(tp);
       }
     }
+  } else {
+    // Asumimos que sl/tp ya vienen como precios absolutos
+    // (nada que hacer)
+  }
 
-    // 3) Construimos el payload final para MetaApi REST
-    const payload = {
-      actionType: action.toLowerCase() === 'buy' ? 'ORDER_TYPE_BUY' : 'ORDER_TYPE_SELL',
-      symbol,
-      volume: Number(lot),
-      stopLoss: stopLoss != null ? Number(stopLoss.toFixed(2)) : undefined,
-      takeProfit: takeProfit != null ? Number(takeProfit.toFixed(2)) : undefined
-    };
+  // En caso de que stopLoss/takeProfit queden aún en puntos (porque no hubo precio)
+  // los mandamos como venían, pero es probable que MetaApi los rechace.
+  // Redondeamos a 2 decimales (ajusta si tu símbolo necesita más)
+  if (typeof stopLoss === 'number') stopLoss = Number(stopLoss.toFixed(2));
+  if (typeof takeProfit === 'number') takeProfit = Number(takeProfit.toFixed(2));
 
-    const url = `https://mt-client-api-v1.new-york.agiliumtrade.ai/users/current/accounts/${ACCOUNT_ID}/trade`;
+  // ------------------------------------------------------------------
+  // 3) Construir payload MetaApi REST
+  // ------------------------------------------------------------------
+  const payload = {
+    actionType: actionIsBuy ? 'ORDER_TYPE_BUY' : 'ORDER_TYPE_SELL',
+    symbol,
+    volume: Number(lot),
+    stopLoss,
+    takeProfit
+  };
 
-    console.log('🚀 Enviando orden a MetaApi:', payload);
-    console.log('🔗 ->', url);
+  const url = `https://mt-client-api-v1.new-york.agiliumtrade.ai/users/current/accounts/${ACCOUNT_ID}/trade`;
 
+  console.log('🚀 Enviando orden a MetaApi:', payload);
+  console.log('🔗 ->', url);
+
+  // ------------------------------------------------------------------
+  // 4) Enviar
+  // ------------------------------------------------------------------
+  try {
     const response = await axios.post(url, payload, {
       headers: {
         'auth-token': TOKEN,
