@@ -1,4 +1,3 @@
-
 // index.js
 require('dotenv').config();
 const express = require('express');
@@ -24,29 +23,56 @@ app.post('/webhook', async (req, res) => {
   const data = req.body;
   console.log('📩 Señal recibida:', data);
 
-  const { symbol, action, lot, sl, tp } = data || {};
+  const { symbol, action, lot, sl, tp, units } = data || {};
 
-  // Validación básica
-  if (!symbol || !action || lot == null || sl == null || tp == null) {
+  if (!symbol || !action || !lot || sl == null || tp == null) {
     console.error('🔴 JSON incompleto o inválido');
     return res.status(400).send('JSON incompleto o inválido');
   }
 
-  // Construimos el payload que espera MetaApi REST
-  const payload = {
-    actionType: action.toLowerCase() === 'buy' ? 'ORDER_TYPE_BUY' : 'ORDER_TYPE_SELL',
-    symbol,
-    volume: Number(lot),
-    stopLoss: Number(sl),
-    takeProfit: Number(tp)
-  };
-
-  const url = `https://mt-client-api-v1.new-york.agiliumtrade.ai/users/current/accounts/${ACCOUNT_ID}/trade`;
-
-  console.log('🚀 Enviando orden a MetaApi:', payload);
-  console.log('🔗 ->', url);
-
   try {
+    // 1) Traemos info del símbolo (precio actual) para poder convertir POINTS -> precio
+    let currentPrice = null;
+    try {
+      const priceResponse = await axios.get(
+        `https://mt-client-api-v1.new-york.agiliumtrade.ai/users/current/accounts/${ACCOUNT_ID}/symbols/${symbol}`,
+        { headers: { 'auth-token': TOKEN } }
+      );
+      currentPrice = priceResponse.data.price ?? priceResponse.data.bid ?? priceResponse.data.ask;
+      console.log('💰 currentPrice:', currentPrice);
+    } catch (e) {
+      console.warn('⚠️ No pude obtener el precio del símbolo, uso stops tal cual vienen');
+    }
+
+    const pointValue = 0.01; // Para GOLD en la mayoría de brokers (revisa si en tu cuenta es 0.01)
+
+    // 2) Convertimos SL/TP si vienen en POINTS
+    let stopLoss = sl;
+    let takeProfit = tp;
+    if (units && units.toUpperCase() === 'POINTS' && currentPrice) {
+      if (action.toLowerCase() === 'buy') {
+        stopLoss = currentPrice - sl * pointValue;
+        takeProfit = currentPrice + tp * pointValue;
+      } else {
+        stopLoss = currentPrice + sl * pointValue;
+        takeProfit = currentPrice - tp * pointValue;
+      }
+    }
+
+    // 3) Construimos el payload final para MetaApi REST
+    const payload = {
+      actionType: action.toLowerCase() === 'buy' ? 'ORDER_TYPE_BUY' : 'ORDER_TYPE_SELL',
+      symbol,
+      volume: Number(lot),
+      stopLoss: stopLoss != null ? Number(stopLoss.toFixed(2)) : undefined,
+      takeProfit: takeProfit != null ? Number(takeProfit.toFixed(2)) : undefined
+    };
+
+    const url = `https://mt-client-api-v1.new-york.agiliumtrade.ai/users/current/accounts/${ACCOUNT_ID}/trade`;
+
+    console.log('🚀 Enviando orden a MetaApi:', payload);
+    console.log('🔗 ->', url);
+
     const response = await axios.post(url, payload, {
       headers: {
         'auth-token': TOKEN,
@@ -58,7 +84,6 @@ app.post('/webhook', async (req, res) => {
     console.log('✅ Orden ejecutada:', response.data);
     return res.status(200).json({ ok: true, result: response.data });
   } catch (err) {
-    // Log detallado del error
     const status = err.response?.status;
     const body = err.response?.data;
     console.error('❌ Error al ejecutar orden:', status, body || err.message);
