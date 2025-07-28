@@ -1,46 +1,58 @@
+require('dotenv').config();
 const express = require('express');
 const bodyParser = require('body-parser');
-const dotenv = require('dotenv');
 const MetaApi = require('metaapi.cloud-sdk').default;
 
-dotenv.config();
-
 const app = express();
-const port = process.env.PORT || 8080;
-
 app.use(bodyParser.json());
 
+const PORT = process.env.PORT || 8080;
 const metaapi = new MetaApi(process.env.METAAPI_TOKEN);
+const ACCOUNT_ID = process.env.METAAPI_ACCOUNT_ID;
+const WEBHOOK_PASSPHRASE = process.env.WEBHOOK_PASSPHRASE;
 
 app.post('/webhook', async (req, res) => {
   try {
-    const { symbol, action, lot, sl, tp } = req.body;
+    const data = req.body;
 
-    if (!symbol || !action || !lot || !sl || !tp) {
-      return res.status(400).send('Faltan parámetros en el JSON');
+    // Validar que venga la passphrase
+    if (WEBHOOK_PASSPHRASE && data.passphrase !== WEBHOOK_PASSPHRASE) {
+      return res.status(401).send('Unauthorized: Invalid passphrase');
     }
 
-    const account = await metaapi.metatraderAccountApi.getAccount(process.env.METAAPI_ACCOUNT_ID);
-    const connection = await account.getStreamingConnection();
-    await connection.waitConnected();
+    const { symbol, action, lot, sl, tp } = data;
+    if (!symbol || !action || !lot || !sl || !tp) {
+      return res.status(400).send('Error: Datos incompletos en el JSON');
+    }
 
+    // Obtener cuenta desde MetaApi
+    const account = await metaapi.metatraderAccountApi.getAccount(ACCOUNT_ID);
+    if (!account || account.state !== 'DEPLOYED') {
+      return res.status(500).send('Error: Cuenta no está desplegada o conectada');
+    }
+
+    console.log('Conectando a la cuenta vía RPC...');
+    const connection = await metaapi.rpc.connect(ACCOUNT_ID);
+
+    console.log('Enviando orden...');
     const result = await connection.trade({
-      symbol: symbol,
-      action: action === 'buy' ? 'ORDER_TYPE_BUY' : 'ORDER_TYPE_SELL',
-      volume: lot,
-      sl: sl,
-      tp: tp,
-      type: action === 'buy' ? 'ORDER_TYPE_BUY' : 'ORDER_TYPE_SELL',
+      symbol,
+      action,
+      lot,
+      sl,
+      tp,
     });
 
-    console.log('Orden ejecutada:', result);
+    console.log('✅ Orden ejecutada correctamente:', result);
     res.status(200).send('Orden ejecutada correctamente');
+
   } catch (error) {
-    console.error('Error al ejecutar la orden:', error);
+    console.error('❌ Error al ejecutar la orden:', error.message);
     res.status(500).send(`Error al ejecutar la orden: ${error.message}`);
   }
 });
 
-app.listen(port, () => {
-  console.log(`Servidor escuchando en el puerto ${port}`);
+app.listen(PORT, () => {
+  console.log(`Servidor escuchando en el puerto ${PORT}`);
 });
+
