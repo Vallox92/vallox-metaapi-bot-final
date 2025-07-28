@@ -1,10 +1,12 @@
-require('dotenv').config();
 const express = require('express');
 const bodyParser = require('body-parser');
+const dotenv = require('dotenv');
 const MetaApi = require('metaapi.cloud-sdk').default;
 
+dotenv.config();
+
 const app = express();
-const port = 8080;
+const port = process.env.PORT || 8080;
 
 app.use(bodyParser.json());
 
@@ -18,25 +20,21 @@ app.post('/webhook', async (req, res) => {
       return res.status(400).send('Faltan parámetros en el JSON');
     }
 
-    const account = await metaapi.metatraderAccountApi.getAccount(process.env.ACCOUNT_ID);
-    const state = await account.getState();
-    if (state !== 'DEPLOYED') {
-      return res.status(400).send('La cuenta no está desplegada');
-    }
-
+    const account = await metaapi.metatraderAccountApi.getAccount(process.env.METAAPI_ACCOUNT_ID);
     const connection = await account.getRPCConnection();
+
     await connection.connect();
 
-    const tradeResult = await connection.trade({
+    const trade = await connection.trade({
       action: 'ORDER_TYPE_BUY',
-      symbol,
+      symbol: symbol,
       volume: lot,
-      stopLoss: sl,
-      takeProfit: tp,
-      type: action === 'buy' ? 'ORDER_TYPE_BUY' : 'ORDER_TYPE_SELL'
+      sl: sl,
+      tp: tp,
+      type: action === 'buy' ? 'ORDER_TYPE_BUY' : 'ORDER_TYPE_SELL',
     });
 
-    console.log('Orden ejecutada correctamente:', tradeResult);
+    console.log('Orden ejecutada:', trade);
     res.status(200).send('Orden ejecutada correctamente');
   } catch (error) {
     console.error('Error al ejecutar la orden:', error);
