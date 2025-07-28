@@ -1,7 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const bodyParser = require('body-parser');
-const { MetaApi } = require('metaapi.cloud-sdk');
+const MetaApi = require('metaapi.cloud-sdk').default;
 
 const app = express();
 const port = 8080;
@@ -15,7 +15,7 @@ app.post('/webhook', async (req, res) => {
     const { symbol, action, lot, sl, tp } = req.body;
 
     if (!symbol || !action || !lot || !sl || !tp) {
-      return res.status(400).send('Faltan parámetros en el cuerpo JSON');
+      return res.status(400).send('Faltan parámetros en el JSON');
     }
 
     const account = await metaapi.metatraderAccountApi.getAccount(process.env.ACCOUNT_ID);
@@ -27,16 +27,16 @@ app.post('/webhook', async (req, res) => {
     const connection = await account.getRPCConnection();
     await connection.connect();
 
-    const position = await connection.trade({
+    const tradeResult = await connection.trade({
       action: 'ORDER_TYPE_BUY',
-      symbol: symbol,
+      symbol,
       volume: lot,
       stopLoss: sl,
       takeProfit: tp,
       type: action === 'buy' ? 'ORDER_TYPE_BUY' : 'ORDER_TYPE_SELL'
     });
 
-    console.log('Orden ejecutada correctamente:', position);
+    console.log('Orden ejecutada correctamente:', tradeResult);
     res.status(200).send('Orden ejecutada correctamente');
   } catch (error) {
     console.error('Error al ejecutar la orden:', error);
@@ -47,3 +47,4 @@ app.post('/webhook', async (req, res) => {
 app.listen(port, () => {
   console.log(`Servidor escuchando en el puerto ${port}`);
 });
+
