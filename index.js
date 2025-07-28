@@ -21,20 +21,19 @@ app.post('/webhook', async (req, res) => {
     }
 
     const account = await metaapi.metatraderAccountApi.getAccount(process.env.METAAPI_ACCOUNT_ID);
-    const connection = await account.getRPCConnection();
+    const connection = await account.getStreamingConnection();
+    await connection.waitConnected();
 
-    await connection.connect();
-
-    const trade = await connection.trade({
-      action: 'ORDER_TYPE_BUY',
+    const result = await connection.trade({
       symbol: symbol,
+      action: action === 'buy' ? 'ORDER_TYPE_BUY' : 'ORDER_TYPE_SELL',
       volume: lot,
       sl: sl,
       tp: tp,
       type: action === 'buy' ? 'ORDER_TYPE_BUY' : 'ORDER_TYPE_SELL',
     });
 
-    console.log('Orden ejecutada:', trade);
+    console.log('Orden ejecutada:', result);
     res.status(200).send('Orden ejecutada correctamente');
   } catch (error) {
     console.error('Error al ejecutar la orden:', error);
@@ -45,4 +44,3 @@ app.post('/webhook', async (req, res) => {
 app.listen(port, () => {
   console.log(`Servidor escuchando en el puerto ${port}`);
 });
-
